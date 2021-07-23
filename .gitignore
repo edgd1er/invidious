@@ -7,3 +7,5 @@
 /invidious
 /sentry
 /config/config.yml
+
+docker-compose.yml
