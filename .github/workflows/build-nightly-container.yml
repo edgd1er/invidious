@@ -3,7 +3,7 @@ name: Build and release container directly from master
 on:
   push:
     branches:
-      - "master"
+      - "masterNone"
     paths-ignore:
       - "*.md"
       - LICENCE
@@ -33,6 +33,7 @@ jobs:
 
       - name: Login to registry
         uses: docker/login-action@v3
+        if: true == false
         with:
           registry: quay.io
           username: ${{ secrets.QUAY_USERNAME }}
@@ -50,14 +51,15 @@ jobs:
             quay.expires-after=12w
 
       - name: Build and push Docker AMD64 image for Push Event
+        if: github.ref == 'refs/heads/master'
         uses: docker/build-push-action@v6
         with:
           context: .
           file: docker/Dockerfile
           platforms: linux/amd64
           labels: ${{ steps.meta.outputs.labels }}
-          push: true
           tags: ${{ steps.meta.outputs.tags }}
+          push: false
           build-args: |
             "release=1"
 
@@ -75,13 +77,15 @@ jobs:
             quay.expires-after=12w
 
       - name: Build and push Docker ARM64 image for Push Event
+        if: github.ref == 'refs/heads/master'
         uses: docker/build-push-action@v6
         with:
           context: .
           file: docker/Dockerfile.arm64
           platforms: linux/arm64/v8
           labels: ${{ steps.meta-arm64.outputs.labels }}
-          push: true
           tags: ${{ steps.meta-arm64.outputs.tags }}
+          push: false
           build-args: |
             "release=1"
+            
