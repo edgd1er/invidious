@@ -2,7 +2,7 @@ name: Invidious CI
 
 on:
   schedule:
-    - cron: "0 0 * * *" # Every day at 00:00
+    - cron: "0 2 * * 5" # Every day at 00:00
   push:
     branches:
       - "master"
@@ -26,11 +26,8 @@ on:
 
 jobs:
   build:
-
     runs-on: ubuntu-latest
-
     name: "build - crystal: ${{ matrix.crystal }}, stable: ${{ matrix.stable }}"
-
     continue-on-error: ${{ !matrix.stable }}
 
     strategy:
@@ -83,20 +80,20 @@ jobs:
         run: crystal build --warnings all --error-on-warnings --error-trace src/invidious.cr
 
   build-docker:
-
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
-
       - name: Build Docker
-        run: docker compose build --build-arg release=0
+        run: docker compose -f docker-compose-dist.yml build --build-arg release=0
 
       - name: Run Docker
-        run: docker compose up -d
+        run: docker compose -f docker-compose-dist.yml up -d
 
       - name: Test Docker
         run: while curl -Isf http://localhost:3000; do sleep 1; done
+
+      - name: stop container
+        run: docker compose -f docker-compose-dist.yml stop
 
   build-docker-arm64:
 
@@ -119,7 +116,10 @@ jobs:
           context: .
           file: docker/Dockerfile.arm64
           platforms: linux/arm64/v8
-          build-args: release=0
+          build-args:
+            release:"1"
+            ALPINE:"3.21"
+            CRVERSION:"1.16.3"
 
       - name: Test Docker
         run: while curl -Isf http://localhost:3000; do sleep 1; done
