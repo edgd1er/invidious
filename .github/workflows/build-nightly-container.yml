@@ -3,7 +3,7 @@ name: Build and release container directly from master
 on:
   push:
     branches:
-      - "master"
+      - "masterNone"
     paths-ignore:
       - "*.md"
       - LICENCE
@@ -43,6 +43,7 @@ jobs:
 
       - name: Login to registry
         uses: docker/login-action@v3
+        if: true == false
         with:
           registry: quay.io
           username: ${{ secrets.QUAY_USERNAME }}
@@ -68,7 +69,7 @@ jobs:
           file:  ${{ matrix.dockerfile }}
           platforms: ${{ matrix.platform }}
           labels: ${{ steps.meta.outputs.labels }}
-          push: true
           tags: ${{ steps.meta.outputs.tags }}
+          push: false
           build-args: |
             "release=1"
