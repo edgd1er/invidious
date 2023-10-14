@@ -43,10 +43,10 @@ jobs:
 
       - name: Login to registry
         uses: docker/login-action@v4
+        if: true == false
         with:
-          registry: quay.io
-          username: ${{ secrets.QUAY_USERNAME }}
-          password: ${{ secrets.QUAY_PASSWORD }}
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
 
       - name: Docker meta
         id: meta
@@ -65,13 +65,14 @@ jobs:
         uses: docker/build-push-action@v7
         with:
           context: .
-          file: ${{ matrix.dockerfile }}
-          platforms: ${{ matrix.platform }}
+          file: "${{ matrix.dockerfile }}"
+          platforms: "${{ matrix.platform }}"
           labels: ${{ steps.meta.outputs.labels }}
-          push: true
           tags: ${{ steps.meta.outputs.tags }}
+          push: false
           build-args: |
             "release=1"
+            "CRMAINTAINER=84codes"
 
   combine-multiarch-images:
     needs: release
@@ -80,16 +81,15 @@ jobs:
       - name: Login to registry
         uses: docker/login-action@v4
         with:
-          registry: quay.io
-          username: ${{ secrets.QUAY_USERNAME }}
-          password: ${{ secrets.QUAY_PASSWORD }}
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
 
       # https://github.com/marketplace/actions/docker-manifest-create-action
       - name: Create and push manifest
-        uses: int128/docker-manifest-create-action@v2.22.0
+        uses: int128/docker-manifest-create-action@v2
         with:
-          push: true
-          tags: quay.io/invidious/invidious:master
+          push: false
+          tags: ${{ secrets.DOCKER_USERNAME }}/invidious:master
           sources: |
-            quay.io/invidious/invidious:master
-            quay.io/invidious/invidious:master-arm64
+            ${{ secrets.DOCKER_USERNAME }}/invidious:master
+            ${{ secrets.DOCKER_USERNAME }}/invidious:master-arm64

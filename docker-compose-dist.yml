@@ -1,0 +1,114 @@
+# Warning: This docker-compose file is made for development purposes.
+# Using it will build an image from the locally cloned repository.
+#
+# If you want to use Invidious in production, see the compose.omv.yml file provided
+# in the installation documentation: https://docs.invidious.io/installation/
+
+services:
+  postgres:
+    image: library/postgres:18-alpine
+    restart: unless-stopped
+    labels:
+      autoheal: "true"
+    volumes:
+      - postgresdata:/var/lib/postgresql/data
+      - ./config/sql:/config/sql:ro
+      #- ./config/sql:/docker-entrypoint-initdb.d/
+      - ./docker/init-invidious-db.sh:/docker-entrypoint-initdb.d/init-invidious-db.sh
+    environment:
+      POSTGRES_DB: invidious
+      POSTGRES_PASSWORD: kemal
+      POSTGRES_USER: kemal
+    healthcheck:
+      test: [ "CMD", "pg_isready", "-U", "postgres" ]
+      interval: 30s
+      timeout: 5s
+      retries: 2
+
+  invidious:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      args:
+        release: 1
+        ALPINE: "3.23"
+        CRVERSION: "1.18.2"
+        disable_quic: 1
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      # Please read the following file for a comprehensive list of all available
+      # configuration options and their associated syntax:
+      # https://github.com/iv-org/invidious/blob/master/config/config.example.yml
+      INVIDIOUS_CONFIG: |
+        db:
+          dbname: invidious
+          user: kemal
+          password: kemal
+          host: invidious-db
+          port: 5432
+        check_tables: true
+        # external_port:
+        # domain:
+        # https_only: false
+        # statistics_enabled: false
+        hmac_key: "CHANGE_ME!!"
+        invidious_companion:
+          # URL used for the internal communication between invidious and invidious companion
+          - private_url: "http://companion:8282"
+            # (public) URL used for the communication between your browser and invidious companion
+            # IF you are using a reverse proxy OR accessing invidious from an external IP then you NEED to change this value
+            # Please consult for more doc: https://github.com/unixfox/invidious/blob/invidious-companion/config/config.example.yml#L57-L88
+            #  public_url: "http://invidious.mission.lan:8284"
+            public_url: "https://invidious-comp.mission.lan"
+      # IT is NOT recommended to use the same key as HMAC KEY. Generate a new key!
+      # Use the key generated in the 2nd step
+      invidious_companion_key: "CHANGED_OR_NOT_C"
+    healthcheck:
+      test: wget -nv --tries=1 --spider http://127.0.0.1:3000/api/v1/trendings || exit 1
+      interval: 30s
+      timeout: 5s
+      retries: 2
+    depends_on:
+      companion:
+        condition: service_healthy
+        restart: true
+      postgres:
+        condition: service_healthy
+        restart: true
+
+  companion:
+    image: invidious-companion:latest
+    build:
+      context: https://github.com/iv-org/invidious-companion.git#master
+      args:
+        TINI_VERSION: 0.19.0
+        BUILDKIT_CONTEXT_KEEP_GIT_DIR: True
+    environment:
+      - log-level=Debug # Accepted values: All, Trace, Debug, Info, Warn, Error, Fatal, Off
+      # Use the key generated in the 2nd step
+      - SERVER_SECRET_KEY=CHANGED_OR_NOT_C
+      # SET this value IF you are using a reverse proxy OR accessing invidious from an external IP.
+      # Please consult for more doc: https://github.com/iv-org/invidious-companion/wiki/Environment-variables
+      - SERVER_BASE_URL=http://127.0.0.1:3000
+    restart: unless-stopped
+    # Remove "127.0.0.1:" if used from an external IP
+    ports:
+      - "8282:8282"
+    logging:
+      options:
+        max-size: "1G"
+        max-file: "4"
+    cap_drop:
+      - ALL
+    read_only: true
+    # cache for youtube library
+    volumes:
+      - companioncache:/var/tmp/youtubei.js:rw
+    security_opt:
+      - no-new-privileges=true
+
+volumes:
+  postgresdata:
+  companioncache:
