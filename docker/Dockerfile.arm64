@@ -1,13 +1,21 @@
-FROM alpine:3.20 AS builder
-RUN apk add --no-cache 'crystal=1.12.2-r0' shards sqlite-static yaml-static yaml-dev libxml2-static \
-       zlib-static openssl-libs-static openssl-dev musl-dev xz-static
+ARG ALPINE=3.20
+FROM alpine:${ALPINE} AS builder
+ARG ALPINE
+ARG release=0
 
-ARG release
+#hadolint ignore=DL3018
+RUN if [ "3.16" = "${ALPINE}" ]; then CRYSTAL="1.4.1-r0"; \
+    elif [ "3.17" = "${ALPINE}" ]; then CRYSTAL="1.6.2-r0"; \
+    elif [ "3.18" = "${ALPINE}" ]; then CRYSTAL="1.8.2-r0"; \
+    elif [ "3.19" = "${ALPINE}" ]; then CRYSTAL="1.10.1-r0"; \
+    elif [ "3.20" = "${ALPINE}" ]; then CRYSTAL="1.12.2-r0"; \
+    elif [ "edge" = "${ALPINE}" ]; then CRYSTAL="1.14.0-r0"; fi; \
+    echo "Using crystal ${CRYSTAL} on alpine ${ALPINE}" ; \
+    apk add --no-cache "crystal=${CRYSTAL}" shards sqlite-static yaml-static yaml-dev libxml2-static zlib-static openssl-libs-static openssl-dev musl-dev xz-static
 
 WORKDIR /invidious
 COPY ./shard.yml ./shard.yml
 COPY ./shard.lock ./shard.lock
-RUN shards install --production
 
 COPY ./src/ ./src/
 # TODO: .git folder is required for building – this is destructive.
@@ -19,10 +27,11 @@ COPY ./scripts/ ./scripts/
 COPY ./assets/ ./assets/
 COPY ./videojs-dependencies.yml ./videojs-dependencies.yml
 
-RUN crystal spec --warnings all \
+RUN shards install --production && \
+    crystal spec --warnings all \
     --link-flags "-lxml2 -llzma"
 
-RUN if [[ "${release}" == 1 ]] ; then \
+RUN if [ "${release}" -eq 1 ] ; then \
         crystal build ./src/invidious.cr \
         --release \
         --static --warnings all \
@@ -32,22 +41,26 @@ RUN if [[ "${release}" == 1 ]] ; then \
         --static --warnings all \
         --link-flags "-lxml2 -llzma"; \
     fi
+ARG ALPINE="3.20"
+FROM alpine:${ALPINE}
 
-FROM alpine:3.20
-RUN apk add --no-cache rsvg-convert ttf-opensans tini tzdata
 WORKDIR /invidious
-RUN addgroup -g 1000 -S invidious && \
+#hadolint ignore=DL3018
+RUN apk add --no-cache rsvg-convert ttf-opensans tini tzdata \
+    && addgroup -g 1000 -S invidious && \
     adduser -u 1000 -S invidious -G invidious
-COPY --chown=invidious ./config/config.* ./config/
-RUN mv -n config/config.example.yml config/config.yml
-RUN sed -i 's/host: \(127.0.0.1\|localhost\)/host: invidious-db/' config/config.yml
-COPY ./config/sql/ ./config/sql/
-COPY ./locales/ ./locales/
-COPY --from=builder /invidious/assets ./assets/
-COPY --from=builder /invidious/invidious .
-RUN chmod o+rX -R ./assets ./config ./locales
+COPY --chmod=555 --chown=invidious ./config/config.* ./config/
+COPY --chmod=555 ./config/sql/ ./config/sql/
+COPY --chmod=555 ./locales/ ./locales/
+COPY --chmod=555 --from=builder /invidious/assets ./assets/
+COPY --chmod=555 --from=builder /invidious/invidious .
+RUN mv -n config/config.example.yml config/config.yml \
+    && sed -i 's/host: \(127.0.0.1\|localhost\)/host: invidious-db/' config/config.yml
 
 EXPOSE 3000
 USER invidious
 ENTRYPOINT ["/sbin/tini", "--"]
 CMD [ "/invidious/invidious" ]
+
+HEALTHCHECK --interval=30s  --timeout=5s --retries=2 \
+      CMD wget -nv --tries=1 --spider http://127.0.0.1:3000/api/v1/trendings || exit 1
