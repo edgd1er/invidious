@@ -1,17 +1,33 @@
-# -----------------------
-#  Compilation options
-# -----------------------
+SHELL:=/bin/bash
+DOCKER:=/usr/bin/docker
+DOCKER_IMAGE_NAME:=edgd1er/invidious
+PTF:=linux/amd64
+DKRFILE:=./docker/Dockerfile
+ARCHI:= $(shell dpkg --print-architecture)
+IMAGE:=invidious
+DUSER:=edgd1er
+PROGRESS:=plain
+WHERE:=--load
+CACHE:=
+aptCacher:=$(shell ifconfig wlp2s0 | awk '/inet /{print $$2}')
+aptCacher:="192.168.53.212"
+ALPINE:="3.24"
+CRVERSION:=1.21.0
+RELEASE:=1
+STATIC:=0
+BUILDER=amd-arm
 
-RELEASE  := 1
-STATIC   := 0
+default: build
+all: lint build test
 
 NO_DBG_SYMBOLS := 0
 
 FLAGS ?=
-
-ifeq ($(RELEASE), 1)
-  FLAGS += --release
-endif
+# Enable multi-threading.
+# Warning: Experimental feature!!
+# invidious is not stable when MT is enabled.
+MT := 0
+FLAGS ?=
 
 ifeq ($(STATIC), 1)
   FLAGS += --static
@@ -33,6 +49,29 @@ endif
 # -----------------------
 
 all: invidious
+
+# https://marmelab.com/blog/2016/02/29/auto-documented-makefile.html
+help:
+	@$(MAKE) -pRrq -f $(lastword $(MAKEFILE_LIST)) : 2>/dev/null | awk -v RS= -F: '/^# Fichiers/,/^# Base/ {if ($$1 !~ "^[#.]") {print $$1}}' | sort | egrep -v -e '^[^[:alnum:]]' -e '^$@$$'
+
+lint:
+	$(DOCKER) run --rm -i hadolint/hadolint < ./docker/Dockerfile
+
+ifeq ($(RELEASE), 1)
+  FLAGS += --release
+endif
+build:
+	$(DOCKER) buildx build $(WHERE) $(CACHE) --platform $(PTF) -f $(DKRFILE) --build-arg ALPINE=$(ALPINE) --build-arg CRVERSION=$(CRVERSION) \
+     --progress=$(PROGRESS) --build-arg aptCacher=$(aptCacher) --build-arg release=$(RELEASE) -t ${DUSER}/$(IMAGE) .
+
+build64:
+	$(DOCKER) buildx build $(WHERE) $(CACHE) --platform linux/arm64 -f $(DKRFILE) --builder $(BUILDER) --build-arg ALPINE=$(ALPINE) \
+  	--build-arg CRVERSION=$(CRVERSION)  --progress=$(PROGRESS) --build-arg aptCacher=$(aptCacher) --build-arg release=$(RELEASE) -t ${DUSER}/$(IMAGE) .
+
+push:
+	$(DOCKER) login
+	$(DOCKER) push $(DOCKER_IMAGE_NAME)
+
 
 get-libs:
 	shards install --production
@@ -74,7 +113,8 @@ verify:
 # -----------------------
 
 clean:
-	rm invidious
+	$(DOCKER) images -qf dangling=true | xargs --no-run-if-empty $(DOCKER) rmi
+	$(DOCKER) volume ls -qf dangling=true | xargs --no-run-if-empty $(DOCKER) volume rm
 
 distclean: clean
 	rm -rf libs
@@ -85,7 +125,7 @@ distclean: clean
 #  Help page
 # -----------------------
 
-help:
+help2:
 	@echo "Targets available in this Makefile:"
 	@echo ""
 	@echo "  get-libs         Fetch Crystal libraries"
@@ -114,3 +154,4 @@ help:
 # No targets generates an output named after themselves
 .PHONY: all get-libs build amd64 run
 .PHONY: format test verify clean distclean help
+.PHONY: lint build build64 help2
