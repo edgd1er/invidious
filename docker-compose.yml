@@ -1,55 +1,61 @@
-# Warning: This docker-compose file is made for development purposes.
-# Using it will build an image from the locally cloned repository.
-#
-# If you want to use Invidious in production, see the docker-compose.yml file provided
-# in the installation documentation: https://docs.invidious.io/installation/
-
-version: "3"
 services:
-
+  postgres:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    volumes:
+      - postgresdata:/var/lib/postgresql/data
+      - ./config/sql:/config/sql
+      - ./docker/init-invidious-db.sh:/docker-entrypoint-initdb.d/init-invidious-db.sh
+    ports:
+      - "5432:5432"
+    networks:
+      - traefik_net
+    environment:
+      POSTGRES_DB: invidious
+      POSTGRES_PASSWORD: kemal
+      POSTGRES_USER: kemal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 30s
+      timeout: 5s
+      retries: 2
   invidious:
+    image: edgd1er/invidious
     build:
       context: .
       dockerfile: docker/Dockerfile
+      args:
+        release: 1
+        CRVERSION: 1.12.1
+        disable_quic: 1
+        ALPINE: 3.19
     restart: unless-stopped
+    networks:
+      - traefik_net
     ports:
-      - "127.0.0.1:3000:3000"
+      - "3001:3000"
     environment:
-      # Please read the following file for a comprehensive list of all available
-      # configuration options and their associated syntax:
-      # https://github.com/iv-org/invidious/blob/master/config/config.example.yml
+      TZ: Europe/Paris
+      # Adapted from ./config/config.yml
       INVIDIOUS_CONFIG: |
+        channel_threads: 1
+        check_tables: true
+        feed_threads: 1
         db:
           dbname: invidious
           user: kemal
           password: kemal
-          host: invidious-db
+          host: postgres
           port: 5432
         check_tables: true
-        # external_port:
-        # domain:
-        # https_only: false
-        # statistics_enabled: false
         hmac_key: "CHANGE_ME!!"
     healthcheck:
       test: wget -nv --tries=1 --spider http://127.0.0.1:3000/api/v1/trending || exit 1
       interval: 30s
       timeout: 5s
       retries: 2
-
-  invidious-db:
-    image: docker.io/library/postgres:14
-    restart: unless-stopped
-    volumes:
-      - postgresdata:/var/lib/postgresql/data
-      - ./config/sql:/config/sql
-      - ./docker/init-invidious-db.sh:/docker-entrypoint-initdb.d/init-invidious-db.sh
-    environment:
-      POSTGRES_DB: invidious
-      POSTGRES_USER: kemal
-      POSTGRES_PASSWORD: kemal
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
-
 volumes:
   postgresdata:
+networks:
+  traefik_net:
+    external: true
