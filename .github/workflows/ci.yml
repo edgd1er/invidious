@@ -2,7 +2,7 @@ name: Invidious CI
 
 on:
   schedule:
-    - cron: "0 0 * * *" # Every day at 00:00
+    - cron: "0 2 * * 5" # Every day at 00:00
   push:
     branches:
       - "master"
@@ -26,11 +26,8 @@ on:
 
 jobs:
   build:
-
     runs-on: ubuntu-latest
-
     name: "build - crystal: ${{ matrix.crystal }}, stable: ${{ matrix.stable }}"
-
     continue-on-error: ${{ !matrix.stable }}
 
     strategy:
@@ -100,26 +97,26 @@ jobs:
 
       - name: Use ARM64 Dockerfile if ARM64
         if: ${{ matrix.name == 'ARM64' }}
-        run: sed -i 's/Dockerfile/Dockerfile.arm64/' docker-compose.yml
+        run: sed -i 's/Dockerfile/Dockerfile.arm64/' docker-compose-dist.yml
 
       - name: Build Docker
-        run: docker compose build
+        run: docker compose -f docker-compose-dist.yml build
 
       - name: Change hmac_key on docker-compose.yml
-        run: sed -i '/hmac_key/s/CHANGE_ME!!/docker-build-hmac-key/' docker-compose.yml
+        run: sed -i '/hmac_key/s/CHANGE_ME!!/docker-build-hmac-key/' docker-compose-dist.yml
 
       - name: Run Docker
-        run: docker compose up -d
+        run: docker compose -f docker-compose-dist.yml up -d
 
       - name: Test Docker
         id: test
-        run: curl -If http://localhost:3000 --retry 5 --retry-delay 1 --retry-all-errors
+        run: sleep 60 && curl -If http://127.0.0.1:3000 --retry 5 --retry-delay 15 --retry-all-errors
 
       - name: Print Invidious container logs
         # Tells Github Actions to always run this step regardless of whether the previous step has failed
         # Without this expression this step would simply be skipped when the previous step fails.
         if: success() || steps.test.conclusion == 'failure'
-        run: docker compose logs
+        run: docker compose -f docker-compose-dist.yml logs
 
   lint:
 
