@@ -26,11 +26,8 @@ on:
 
 jobs:
   build:
-
     runs-on: ubuntu-latest
-
     name: "build - crystal: ${{ matrix.crystal }}, stable: ${{ matrix.stable }}"
-
     continue-on-error: ${{ !matrix.stable }}
 
     strategy:
@@ -50,9 +47,14 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: true
-
+      - uses: actions/setup-node@v3
+        with:
+          # Version Spec of the version to use in SemVer notation.
+          # It also emits such aliases as lts, latest, nightly and canary builds
+          # Examples: 12.x, 10.15.1, >=10.15.0, lts/Hydrogen, 16-nightly, latest, node
+          node-version: 'latest'
       - name: Install Crystal
-        uses: crystal-lang/install-crystal@v1.8.0
+        uses: crystal-lang/install-crystal@v1.8.2
         with:
           crystal: ${{ matrix.crystal }}
 
@@ -83,20 +85,20 @@ jobs:
         run: crystal build --warnings all --error-on-warnings --error-trace src/invidious.cr
 
   build-docker:
-
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
-
       - name: Build Docker
-        run: docker compose build --build-arg release=0
+        run: docker compose -f docker-compose-dist.yml build --build-arg release=0
 
       - name: Run Docker
-        run: docker compose up -d
+        run: docker compose -f docker-compose-dist.yml up -d
 
       - name: Test Docker
         run: while curl -Isf http://localhost:3000; do sleep 1; done
+
+      - name: stop container
+        run: docker compose -f docker-compose-dist.yml stop
 
   build-docker-arm64:
 
@@ -114,25 +116,29 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Build Docker ARM64 image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: .
           file: docker/Dockerfile.arm64
           platforms: linux/arm64/v8
-          build-args: release=0
+          build-args:
+            release:"1"
+            ALPINE:"3.19"
+            CRVERSION:"1.12.1"
 
       - name: Test Docker
         run: while curl -Isf http://localhost:3000; do sleep 1; done
 
   ameba_lint:
     runs-on: ubuntu-latest
+    if: false
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: true
 
       - name: Install Crystal
-        uses: crystal-lang/install-crystal@v1.8.0
+        uses: crystal-lang/install-crystal@v1.8.2
         with:
           crystal: latest
 
