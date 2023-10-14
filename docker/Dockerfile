@@ -1,6 +1,8 @@
-FROM crystallang/crystal:1.16.3-alpine AS builder
-
-RUN apk add --no-cache sqlite-static yaml-static
+ARG CRVERSION=1.16.3
+ARG ALPINE=3.22
+FROM crystallang/crystal:$CRVERSION-alpine AS builder
+#hadolint ignore=DL3018
+RUN apk add --no-cache sqlite-static yaml-static pcre2-dev gc-dev
 
 ARG release
 
@@ -21,31 +23,39 @@ COPY ./videojs-dependencies.yml ./videojs-dependencies.yml
 
 RUN crystal spec --warnings all \
     --link-flags "-lxml2 -llzma"    
-RUN --mount=type=cache,target=/root/.cache/crystal if [[ "${release}" == 1 ]] ; then \
+RUN --mount=type=cache,target=/root/.cache/crystal if [ "${release}" = 1 ] ; then \
         crystal build ./src/invidious.cr \
         --release \
         --static --warnings all \
         --link-flags "-lxml2 -llzma"; \
     else \
+        echo 'Not buidling release nor disabled_quic' ; \
         crystal build ./src/invidious.cr \
         --static --warnings all \
         --link-flags "-lxml2 -llzma"; \
     fi
 
-FROM alpine:3.21
-RUN apk add --no-cache rsvg-convert ttf-opensans tini tzdata
-WORKDIR /invidious
-RUN addgroup -g 1000 -S invidious && \
-    adduser -u 1000 -S invidious -G invidious
-COPY --chown=invidious ./config/config.* ./config/
-RUN mv -n config/config.example.yml config/config.yml
-RUN sed -i 's/host: \(127.0.0.1\|localhost\)/host: invidious-db/' config/config.yml
-COPY ./config/sql/ ./config/sql/
-COPY ./locales/ ./locales/
-COPY --from=builder /invidious/assets ./assets/
-COPY --from=builder /invidious/invidious .
-RUN chmod o+rX -R ./assets ./config ./locales
+ARG ALPINE
+FROM alpine:$ALPINE
+ARG ALPINE
 
+WORKDIR /invidious
+#hadolint ignore=DL3018
+RUN apk add --no-cache rsvg-convert ttf-opensans tini tzdata\
+    && addgroup -g 1000 -S invidious && \
+    adduser -u 1000 -S invidious -G invidious
+COPY --chmod=555 --chown=invidious ./config/config.* ./config/
+COPY --chmod=555 ./config/sql/ ./config/sql/
+COPY --chmod=555 ./locales/ ./locales/
+COPY --chmod=555 --from=builder /invidious/assets ./assets/
+COPY --chmod=555 --from=builder /invidious/invidious .
+COPY --chmod=555 --chown=invidious ./config/config.* ./config/
+#hadolint ignore=DL3018
+RUN apk add --no-cache librsvg ttf-opensans wget\
+    && mv -n config/config.example.yml config/config.yml \
+    && sed -i 's/host: \(127.0.0.1\|localhost\)/host: postgres/' config/config.yml
+HEALTHCHECK --interval=30s  --timeout=5s --retries=2 \
+      CMD wget -nv --tries=1 --spider http://127.0.0.1:3000/api/v1/trendings || exit 1
 EXPOSE 3000
 USER invidious
 ENTRYPOINT ["/sbin/tini", "--"]
