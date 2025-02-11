@@ -2,7 +2,7 @@ name: Invidious CI
 
 on:
   schedule:
-    - cron: "0 0 * * *" # Every day at 00:00
+    - cron: "0 2 * * 5" # Every day at 00:00
   push:
     branches:
       - "master"
